@@ -439,8 +439,8 @@ def convert_svg(svg_path, out_path):
     for nr,line in enumerate(format_grouped_wrapped(msxpathpoints, group_sep=", ",max_width=61)):
         lines.append(str(1000+nr*10) + " DATA " + line)
 
-
-    with open(out_path, "w") as f:
+    # Now write to file so that MSX can read it (DOS line ending!)
+    with open(out_path, "w", newline="\r\n") as f:
         f.write("\n".join(lines) + "\n")
 
     print(f"\nOutput   : {out_path}  ({len(lines)} lines)")
