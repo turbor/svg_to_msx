@@ -19,6 +19,7 @@ If no output filename is given, the output is written to <input_stem>.txt
 import sys
 import re
 import xml.etree.ElementTree as ET
+from collections import defaultdict
 from pathlib import Path
 
 BASICPROGRAM = [
@@ -274,6 +275,19 @@ def map_coord(value, min_val, extent):
     normalized = max(0.0, min(1.0, normalized))
     return round(normalized * 255)
 
+# ---------------------------------------------------------------------------
+# Coordinate mapping for the POP intros so the result would be
+#     -127 <= result <= 127
+# ---------------------------------------------------------------------------
+
+def map_pop_coord(value, min_val, extent):
+    """Map a raw SVG coordinate to an integer in [0, 255]."""
+    if extent == 0:
+        return 0
+    normalized = (value - min_val ) / extent
+    normalized = max(0.0, min(1.0, normalized)) - 0.5
+    return round(normalized * 255)
+
 
 # ---------------------------------------------------------------------------
 # SVG namespace helper
@@ -386,7 +400,7 @@ def format_grouped_wrapped(
 # Main conversion
 # ---------------------------------------------------------------------------
 
-def convert_svg(svg_path, out_path):
+def convert_svg_to_basic(svg_path, out_path):
     tree = ET.parse(svg_path)
     root = tree.getroot()
 
@@ -445,6 +459,95 @@ def convert_svg(svg_path, out_path):
 
     print(f"\nOutput   : {out_path}  ({len(lines)} lines)")
 
+def convert_svg_to_pop_intro_data_asm(svg_path, out_path):
+    tree = ET.parse(svg_path)
+    root = tree.getroot()
+
+    all_x=set()
+    all_y=set()
+
+    try:
+        vb_min_x, vb_min_y, vb_width, vb_height = get_viewbox(root)
+    except ValueError as e:
+        print(f"Error reading viewBox: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"viewBox  : origin=({vb_min_x}, {vb_min_y})  "
+          f"size=({vb_width} x {vb_height})")
+
+    paths = find_paths(root)
+    if not paths:
+        print("No <path> elements found in the SVG.", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"Paths    : {len(paths)} found")
+
+    msxpaths = defaultdict(list)
+    msxclosed = dict()
+    for i, path_el in enumerate(paths):
+        d = path_el.get("d", "").strip()
+        pid = path_el.get("id", f"#{i+1}")
+        if not d:
+            print(f"  [{pid}] empty 'd' attribute — skipped")
+            continue
+
+        points, closed = path_to_points(d)
+        msxclosed[i]=closed
+
+        if not points:
+            print(f"  [{pid}] no points extracted — skipped")
+            continue
+
+        status = "closed (*)" if closed else "open (**)"
+        print(f"  [{pid}] {len(points)} point(s), {status}")
+
+        if len(points) > 400:
+            print(f"  [{pid}] too many points in path — skipping")
+            continue
+
+        for (x, y) in points:
+            gx = map_pop_coord(x, vb_min_x, vb_width)
+            gy = map_pop_coord(y, vb_min_y, vb_height)
+            msxpaths[i].append([gx,gy])
+            all_x.add(gx)
+            all_y.add(gy)
+
+    #for nr,line in enumerate(format_grouped_wrapped(msxpathpoints, group_sep=", ",max_width=61)):
+    #    lines.append(str(1000+nr*10) + " DATA " + line)
+    print(f"number of X: {len(all_x)}")
+    print(f"number of Y: {len(all_y)}")
+
+    # Find common elements and sort them
+    common = sorted(all_x & all_y)
+
+    # Build final lists
+    list_x = common + sorted(all_x - all_y)
+    list_y = common + sorted(all_y - all_x)
+
+    lines=[]
+    lines.append(f"; X-coordinates ({len(list_x)})")
+    for nr,line in enumerate(format_grouped_wrapped(list_x, group_size=4,group_sep=", ",max_width=61)):
+        lines.append(" db " + line)
+    lines.append(f"; Y-coordinates ({len(list_y)})")
+    for nr,line in enumerate(format_grouped_wrapped(list_y, group_size=4,group_sep=", ",max_width=61)):
+        lines.append(" db " + line)
+    for i in msxclosed.keys():
+        lines.append(" ; path i : closed " + str(msxclosed[i]))
+        # close the loop if closed
+        if msxclosed[i] and msxpaths[i][-1]!=msxpaths[i][0]:
+                msxpaths[i].append(msxpaths[i][0])
+        #convert paths to indexed values
+        msxpaths[i] = [[list_x.index(x),list_y.index(y)] for x,y in msxpaths[i]]
+        flat = [x for pair in msxpaths[i] for x in pair]
+        flat.append(255)
+        for nr, line in enumerate(format_grouped_wrapped(flat, group_size=4, group_sep=",  ", max_width=61)):
+            lines.append(" db " + line)
+
+    # Now write to file so that MSX can read it (DOS line ending!)
+    with open(out_path, "w", newline="\r\n") as f:
+        f.write("\n".join(lines) + "\n")
+
+    return
 
 # ---------------------------------------------------------------------------
 # Entry point
@@ -462,8 +565,8 @@ def main():
 
     out_path = Path(sys.argv[2]) if len(sys.argv) >= 3 else svg_path.with_suffix(".txt")
 
-    convert_svg(svg_path, out_path)
-
+    convert_svg_to_basic(svg_path, out_path)
+    convert_svg_to_pop_intro_data_asm(svg_path, out_path.with_suffix(".asm"))
 
 if __name__ == "__main__":
     main()

@@ -1,3 +1,25 @@
+; The pseudocode
+; The mainlus is can be described in this pseudcode
+
+Get new middlepoint (x,y) and rotation_angle (alpha)
+if new_alpha != old_alpha:
+    fetch cos and sine for alpha
+    recalculate all x_cos,x_sin
+    copy shared x_cos,x_sin to y_cos,y_sin
+    recalculate remaining y_cos,y_sin
+if (new_midpoint!=old_midpoint) or (new_alpha != old_alpha):
+    for all points
+        calculate x_final
+        calculate y_final
+        calculate clip_check
+for all path in paths:
+  p1=first point of path
+  for i=1;i<len(path)-1;i++
+    p2=point i of path
+    if (clip_check(p1) || clip_check(p2))==0:
+      #trivial draw since both in screen
+      draw line from p1 to p2
+
 ; For all points we do not store the direct (x,y)
 ; x,y coordinates but an index into the x_coord 
 ; and y_coord list , this way we need much less calculations
