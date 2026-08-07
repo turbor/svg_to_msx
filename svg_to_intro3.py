@@ -29,6 +29,19 @@ COORD_MIN = -64
 COORD_MAX = 64
 
 # ---------------------------------------------------------------------------
+# Proximity filter thresholds
+# ---------------------------------------------------------------------------
+# After mapping SVG coordinates to integer screen coordinates, consecutive
+# vertices that are too close together produce invisible line segments and
+# waste byte space. A new vertex is skipped if:
+#   abs(x - x_prev) <= PROXIMITY_X  AND  abs(y - y_prev) <= PROXIMITY_Y
+#
+# Set to 0 to disable filtering (only exact duplicates are skipped).
+# ---------------------------------------------------------------------------
+PROXIMITY_X = 1
+PROXIMITY_Y = 1
+
+# ---------------------------------------------------------------------------
 # SVG path command parser
 # ---------------------------------------------------------------------------
 
@@ -327,11 +340,12 @@ def convert_svg_to_object1(svg_path, out_path):
                 my = map_coord(y, vb_min_y, vb_height, COORD_MIN, COORD_MAX)
                 mapped_points.append((mx, my))
 
-            # Deduplicate consecutive identical points
+            # Deduplicate consecutive points within proximity threshold
             deduped = [mapped_points[0]]
             for p in mapped_points[1:]:
-                if p != deduped[-1]:
-                    deduped.append(p)
+                if abs(p[0] - deduped[-1][0]) <= PROXIMITY_X and abs(p[1] - deduped[-1][1]) <= PROXIMITY_Y:
+                    continue
+                deduped.append(p)
 
             # Record vertex indices (reuse existing vertex if same coordinates)
             vertex_indices = []

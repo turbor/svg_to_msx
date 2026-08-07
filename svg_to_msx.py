@@ -62,6 +62,19 @@ BASICPROGRAM = [
 ]
 
 # ---------------------------------------------------------------------------
+# Proximity filter thresholds
+# ---------------------------------------------------------------------------
+# After mapping SVG coordinates to integer screen coordinates, consecutive
+# vertices that are too close together produce invisible line segments and
+# waste DATA/byte space. A new vertex is skipped if:
+#   abs(x - x_prev) <= PROXIMITY_X  AND  abs(y - y_prev) <= PROXIMITY_Y
+#
+# Set to 0 to disable filtering (only exact duplicates are skipped).
+# ---------------------------------------------------------------------------
+PROXIMITY_X = 1
+PROXIMITY_Y = 1
+
+# ---------------------------------------------------------------------------
 # SVG path command parser
 # ---------------------------------------------------------------------------
 # SVG paths use a compact mini-language in the 'd' attribute of <path> elements.
@@ -561,11 +574,17 @@ def convert_svg_to_basic(svg_path, out_path):
             print(f"  [{pid}] too many points in path -- skipping")
             continue
 
-        # Map each SVG coordinate to the [0,255] MSX screen range
+        # Map each SVG coordinate to the [0,255] MSX screen range,
+        # skipping vertices that fall within the proximity threshold
+        # of the previous vertex in this path.
+        prev_gx, prev_gy = None, None
         for (x, y) in points:
             gx = map_coord(x, vb_min_x, vb_width)
             gy = map_coord(y, vb_min_y, vb_height)
+            if prev_gx is not None and abs(gx - prev_gx) <= PROXIMITY_X and abs(gy - prev_gy) <= PROXIMITY_Y:
+                continue
             msxpathpoints.extend([gx,gy])
+            prev_gx, prev_gy = gx, gy
 
         # Append the path-end sentinel
         msxpathpoints.extend(["*","*"] if closed else ["**","**"])
@@ -656,13 +675,18 @@ def convert_svg_to_pop_intro_data_asm(svg_path, out_path):
             print(f"  [{pid}] too many points in path -- skipping")
             continue
 
-        # Map to signed range centered at zero (-127..127)
+        # Map to signed range centered at zero (-127..127),
+        # skipping vertices within the proximity threshold of the previous one.
+        prev_gx, prev_gy = None, None
         for (x, y) in points:
             gx = map_pop_coord(x, vb_min_x, vb_width)
             gy = map_pop_coord(y, vb_min_y, vb_height)
+            if prev_gx is not None and abs(gx - prev_gx) <= PROXIMITY_X and abs(gy - prev_gy) <= PROXIMITY_Y:
+                continue
             msxpaths[i].append([gx,gy])
             all_x.add(gx)
             all_y.add(gy)
+            prev_gx, prev_gy = gx, gy
 
     print(f"number of X: {len(all_x)}")
     print(f"number of Y: {len(all_y)}")
